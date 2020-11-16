@@ -15,26 +15,36 @@ class MotionData(Dataset):
     """
     def __init__(self, args):
         super(MotionData, self).__init__()
-        name = args.dataset
-        file_path = './datasets/Mixamo/{}.npy'.format(name)
+        name = args.character
+        file_path = './datasets/{}/{}.npy'.format(args.dataset,name)
 
         if args.debug:
             file_path = file_path[:-4] + '_debug' + file_path[-4:]
 
         print('load from file {}'.format(file_path))
         self.total_frame = 0
-        self.std_bvh = get_std_bvh(args)
+        self.std_bvh = get_std_bvh(args, args.character)  # get standard bvh for offsets(same for all motions).
         self.args = args
         self.data = []
         self.motion_length = []
-        motions = np.load(file_path, allow_pickle=True)
+        motions = np.load(file_path, allow_pickle=True)  # load motion
+        # motions.shape: 7 ( 7 motions per character)
+        # motions[0].shape: 18, 75 <- 18: num of frames(Back Squat), 75 = 3 * 25 (euler angle)
+        # motions[1].shape: 13, 75 <- 13: num of frames(Drunk Walk Backwards), 75 = 3 * 25 (euler angle)
+        # motions[2].shape: 274, 75 <- 274: num of frames(Samba Dancing), 75 = 3 * 25 (euler angle)
+        
         motions = list(motions)
-        new_windows = self.get_windows(motions)
+        if len(motions) == 1 and motions[0].shape[0] <= 1:  # single motion just used for preprocessing
+            # __import__('pdb').set_trace()
+            motions[0] = np.concatenate([motions[0]] * args.window_size)
+        new_windows = self.get_windows(motions)  # default window size = 64 # split motion into same window_size
+        # our motion data
         self.data.append(new_windows)
         self.data = torch.cat(self.data)
         self.data = self.data.permute(0, 2, 1)
 
-        if args.normalization == 1:
+        # The data(not only offset, but also the quaternions) is normalized(along time axis) by default!
+        if args.normalization == 1:  
             self.mean = torch.mean(self.data, (0, 2), keepdim=True)
             self.var = torch.var(self.data, (0, 2), keepdim=True)
             self.var = self.var ** (1/2)
@@ -42,13 +52,17 @@ class MotionData(Dataset):
             self.var[idx] = 1
             self.data = (self.data - self.mean) / self.var
         else:
+            # IMPORTANT  
+            # we should not train with normalization because unknown skeleton object does not have mean or variance
             self.mean = torch.mean(self.data, (0, 2), keepdim=True)
             self.mean.zero_()
             self.var = torch.ones_like(self.mean)
 
-        train_len = self.data.shape[0] * 95 // 100
-        self.test_set = self.data[train_len:, ...]
-        self.data = self.data[:train_len, ...]
+        # Single windowed motion will not work due to this! so i erased it
+        if False:
+            train_len = self.data.shape[0] * 95 // 100
+            self.test_set = self.data[train_len:, ...]
+            self.data = self.data[:train_len, ...]
         self.data_reverse = torch.tensor(self.data.numpy()[..., ::-1].copy())
 
         self.reset_length_flag = 0
@@ -74,27 +88,34 @@ class MotionData(Dataset):
 
     def get_windows(self, motions):
         new_windows = []
+        # __import__('pdb').set_trace()
 
         for motion in motions:
-            self.total_frame += motion.shape[0]
-            motion = self.subsample(motion)
+            self.total_frame += motion.shape[0]  # used only for logging
+            # In original paper, 60fps -> 30fps
+            # Since our data is based on 30fps, we should NOT subsample
+            if self.args.use_original:
+                motion = self.subsample(motion)
+            else:
+                pass
             self.motion_length.append(motion.shape[0])
             step_size = self.args.window_size // 2
             window_size = step_size * 2
+            # Problem occurs when window size is bigger than the bvh animation length!
             n_window = motion.shape[0] // step_size - 1
             for i in range(n_window):
                 begin = i * step_size
                 end = begin + window_size
 
-                new = motion[begin:end, :]
+                new = motion[begin:end, :]  # [64, 75] <- 64: window_size, 75=25(J) x 3(euler)
                 if self.args.rotation == 'quaternion':
-                    new = new.reshape(new.shape[0], -1, 3)
-                    rotations = new[:, :-1, :]
-                    rotations = Quaternions.from_euler(np.radians(rotations)).qs
-                    rotations = rotations.reshape(rotations.shape[0], -1)
-                    positions = new[:, -1, :]
-                    positions = np.concatenate((new, np.zeros((new.shape[0], new.shape[1], 1))), axis=2)
-                    new = np.concatenate((rotations, new[:, -1, :].reshape(new.shape[0], -1)), axis=1)
+                    new = new.reshape(new.shape[0], -1, 3)  # [64, 25, 3] <- W, J, 3
+                    rotations = new[:, :-1, :]  # [64, 24, 3] <- W, J-1, 3  Why remove?
+                    rotations = Quaternions.from_euler(np.radians(rotations)).qs  # [64, 24, 4]
+                    rotations = rotations.reshape(rotations.shape[0], -1)  # [64, 96]
+                    # positions = new[:, -1, :]  # [64, 3]
+                    # positions = np.concatenate((new, np.zeros((new.shape[0], new.shape[1], 1))), axis=2)  # [ 64, 25, 4]
+                    new = np.concatenate((rotations, new[:, -1, :].reshape(new.shape[0], -1)), axis=1)  # [64, 99]: rot + position?
 
                 new = new[np.newaxis, ...]
 
@@ -103,7 +124,9 @@ class MotionData(Dataset):
 
         return torch.cat(new_windows)
 
-    def subsample(self, motion):
+    def subsample(self, motion):  # motions are subsampled!!
+        # In original paper, 60fps -> 30fps
+        # Since our data is based on 30fps, we should NOT subsample
         return motion[::2, :]
 
     def denormalize(self, motion):

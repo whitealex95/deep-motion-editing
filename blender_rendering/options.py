@@ -21,6 +21,7 @@ class Options:
     def initialize(self):
         self.parser.add_argument('--bvh_path', type=str, default='./example.bvh', help='path of input bvh file')
         self.parser.add_argument('--save_path', type=str, default='./results/', help='path of output video file')
+        self.parser.add_argument('--epoch', type=int, default=200, help='epoch of the model')
         self.parser.add_argument('--render_engine', type=str, default='cycles',
                                  help='name of preferable render engine: cycles, eevee')
         self.parser.add_argument('--render', action='store_true', default=False, help='render an output video')

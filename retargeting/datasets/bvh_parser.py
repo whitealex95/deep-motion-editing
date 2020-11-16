@@ -25,6 +25,9 @@ corps_name_three_arms = ['Three_Arms_Hips', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 
 corps_name_three_arms_split = ['Three_Arms_split_Hips', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'LeftToeBase', 'RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase', 'Spine', 'Spine1', 'Neck', 'Head', 'LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand', 'LeftHand_split', 'RightShoulder', 'RightArm', 'RightForeArm', 'RightHand', 'RightHand_split']
 corps_name_Prisoner = ['HipsPrisoner', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'LeftToeBase', 'LeftToe_End', 'RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase', 'RightToe_End', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Head', 'HeadTop_End', 'LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand', 'RightShoulder', 'RightArm', 'RightForeArm']
 corps_name_mixamo2_m = ['Hips', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'LeftToeBase', 'LeftToe_End', 'RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase', 'RightToe_End', 'Spine', 'Spine1', 'Spine1_split', 'Spine2', 'Neck', 'Head', 'HeadTop_End', 'LeftShoulder', 'LeftShoulder_split', 'LeftArm', 'LeftForeArm', 'LeftHand', 'RightShoulder', 'RightShoulder_split', 'RightArm', 'RightForeArm', 'RightHand']
+
+# Our custom mixamo dataset: remove '_split'. use ee_name_2
+corps_name_mixamo = ['Hips', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'LeftToeBase', 'LeftToe_End', 'RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase', 'RightToe_End', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Head', 'HeadTop_End', 'LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand', 'RightShoulder', 'RightArm', 'LeftForeArm', 'RightHand']
 # corps_name_example = ['Root', 'LeftUpLeg', ..., 'LeftToe', 'RightUpLeg', ..., 'RightToe', 'Spine', ..., 'Head', 'LeftShoulder', ..., 'LeftHand', 'RightShoulder', ..., 'RightHand']
 
 """
@@ -45,6 +48,9 @@ ee_name_Prisoner = ['LeftToe_End', 'RightToe_End', 'HeadTop_End', 'LeftHand', 'R
 
 corps_names = [corps_name_1, corps_name_2, corps_name_3, corps_name_cmu, corps_name_monkey, corps_name_boss,
                corps_name_boss, corps_name_three_arms, corps_name_three_arms_split, corps_name_Prisoner, corps_name_mixamo2_m]
+# Append custom mixamo dataset to coprs_names
+corps_names.append(corps_name_mixamo)
+
 ee_names = [ee_name_1, ee_name_2, ee_name_3, ee_name_cmu, ee_name_monkey, ee_name_1, ee_name_1, ee_name_1, ee_name_three_arms_split, ee_name_Prisoner, ee_name_2]
 """
 3.
@@ -57,7 +63,7 @@ Add previously added corps_name and ee_name at the end of the two above lists.
 class BVH_file:
     def __init__(self, file_path=None, args=None, dataset=None, new_root=None):
         if file_path is None:
-            file_path = get_std_bvh(dataset=dataset)
+            file_path = get_std_bvh(args, dataset=dataset)
         self.anim, self._names, self.frametime = BVH.load(file_path)
         if new_root is not None:
             self.set_new_root(new_root)
@@ -72,6 +78,8 @@ class BVH_file:
             if ':' in name:
                 name = name[name.find(':') + 1:]
                 self._names[i] = name
+        if 'mixamo' in self._names[0] or 'boss' in self._names[0]:
+            self._names = ['_'.join(_name.split('_')[1:]) for _name in self._names] 
 
         full_fill = [1] * len(corps_names)
         for i, ref_names in enumerate(corps_names):
@@ -116,6 +124,9 @@ class BVH_file:
         """
         # if ...:
         #     self.skeleton_type = 11
+        if self.skeleton_type == -1:
+            print('Using custom mixamo skeleton')
+            self.skeleton_type = 11
 
         if self.skeleton_type == -1:
             print(self._names)
@@ -123,7 +134,7 @@ class BVH_file:
 
         if self.skeleton_type == 0:
             self.set_new_root(1)
-
+        
         self.details = []
         for i, name in enumerate(self._names):
             if ':' in name: name = name[name.find(':')+1:]
@@ -143,6 +154,7 @@ class BVH_file:
         if len(self.corps) != len(corps_names[self.skeleton_type]):
             for i in self.corps: print(self._names[i], end=' ')
             print(self.corps, self.skeleton_type, len(self.corps), sep='\n')
+            __import__('pdb').set_trace()
             raise Exception('Problem in file', file_path)
 
         self.ee_id = []
@@ -195,6 +207,8 @@ class BVH_file:
         return self.ee_id
 
     def to_numpy(self, quater=False, edge=True):
+        # __import__('pdb').set_trace()
+        # order of rotations is different from self.anim.rotations!
         rotations = self.anim.rotations[:, self.corps, :]
         if quater:
             rotations = Quaternions.from_euler(np.radians(rotations)).qs
@@ -207,6 +221,7 @@ class BVH_file:
                 index.append(e[0])
             rotations = rotations[:, index, :]
 
+        # rotation is not unique????
         rotations = rotations.reshape(rotations.shape[0], -1)
 
         return np.concatenate((rotations, positions), axis=1)

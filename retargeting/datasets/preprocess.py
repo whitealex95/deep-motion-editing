@@ -1,4 +1,6 @@
 import os
+import sys
+sys.path.insert(0, os.path.abspath('.'))
 import numpy as np
 import copy
 from datasets.bvh_parser import BVH_file
@@ -7,8 +9,10 @@ from option_parser import get_args, try_mkdir
 
 
 def collect_bvh(data_path, character, files):
+    # BVH -> numpy
     print('begin {}'.format(character))
     motions = []
+    # __import__('pdb').set_trace()
 
     for i, motion in enumerate(files):
         if not os.path.exists(data_path + character + '/' + motion):
@@ -23,14 +27,20 @@ def collect_bvh(data_path, character, files):
     print('Npy file saved at {}'.format(save_file))
 
 
-def write_statistics(character, path):
-    args = get_args()
+def write_statistics(args, character, path):
     new_args = copy.copy(args)
     new_args.data_augment = 0
-    new_args.dataset = character
+    new_args.character = character
+    new_args.dataset = path.split('/')[2]
 
-    dataset = MotionData(new_args)
+    try:
+        dataset = MotionData(new_args)
+    except:
+        __import__('pdb').set_trace()
+        dataset = MotionData(new_args)
 
+
+    # how calculate mean & var?  is it from rotation or offset? it's from both...
     mean = dataset.mean
     var = dataset.var
     mean = mean.cpu().numpy()[0, ...]
@@ -44,12 +54,15 @@ def copy_std_bvh(data_path, character, files):
     """
     copy an arbitrary bvh file as a static information (skeleton's offset) reference
     """
-    cmd = 'cp \"{}\" ./datasets/Mixamo/std_bvhs/{}.bvh'.format(data_path + character + '/' + files[0], character)
+    cmd = 'cp \"{}\" {}std_bvhs/{}.bvh'.format(data_path + character + '/' + files[0], data_path, character)
     os.system(cmd)
 
 
 if __name__ == '__main__':
-    prefix = './datasets/Mixamo/'
+    args=get_args()
+    # prefix = './datasets/Mixamo/'
+    # prefix = './datasets/Mixamo_custom_single_back/'
+    prefix = f'./datasets/{args.dataset}/'
     characters = [f for f in os.listdir(prefix) if os.path.isdir(os.path.join(prefix, f))]
     if 'std_bvhs' in characters: characters.remove('std_bvhs')
     if 'mean_var' in characters: characters.remove('mean_var')
@@ -61,6 +74,12 @@ if __name__ == '__main__':
         data_path = os.path.join(prefix, character)
         files = sorted([f for f in os.listdir(data_path) if f.endswith(".bvh")])
 
-        collect_bvh(prefix, character, files)
-        copy_std_bvh(prefix, character, files)
-        write_statistics(character, './datasets/Mixamo/mean_var/')
+        try:
+            collect_bvh(prefix, character, files)
+            copy_std_bvh(prefix, character, files)
+            write_statistics(args, character, os.path.join(prefix, 'mean_var/'))
+        except:
+            __import__('pdb').set_trace()
+            collect_bvh(prefix, character, files)
+            copy_std_bvh(prefix, character, files)
+            write_statistics(args, character, os.path.join(prefix, 'mean_var/'))

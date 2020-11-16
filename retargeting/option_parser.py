@@ -15,7 +15,7 @@ def get_parser():
     parser.add_argument('--activation', type=str, default='LeakyReLU', help='activation: ReLU, LeakyReLU, tanh')
     parser.add_argument('--rotation', type=str, default='quaternion', help='representation of rotation:euler_angle, quaternion')
     parser.add_argument('--data_augment', type=int, default=1, help='data_augment: 1 or 0')
-    parser.add_argument('--epoch_num', type=int, default=20001, help='epoch_num')
+    parser.add_argument('--epoch_num', type=int, default=40001, help='epoch_num')
     parser.add_argument('--window_size', type=int, default=64, help='length of time axis per window')
     parser.add_argument('--kernel_size', type=int, default=15, help='must be odd')
     parser.add_argument('--base_channel_num', type=int, default=-1)
@@ -30,7 +30,7 @@ def get_parser():
     parser.add_argument('--patch_gan', type=int, default=1)
     parser.add_argument('--debug', type=int, default=0)
     parser.add_argument('--skeleton_info', type=str, default='concat')
-    parser.add_argument('--ee_loss_fact', type=str, default='height')
+    parser.add_argument('--ee_loss_fact', type=str, default='height')  # learn
     parser.add_argument('--pos_repr', type=str, default='3d')
     parser.add_argument('--D_global_velo', type=int, default=0)
     parser.add_argument('--gan_mode', type=str, default='lsgan')
@@ -38,12 +38,14 @@ def get_parser():
     parser.add_argument('--is_train', type=int, default=1)
     parser.add_argument('--model', type=str, default='mul_top_mul_ske')
     parser.add_argument('--epoch_begin', type=int, default=0)
+
     parser.add_argument('--lambda_rec', type=float, default=5)
     parser.add_argument('--lambda_cycle', type=float, default=5)
     parser.add_argument('--lambda_ee', type=float, default=100)
     parser.add_argument('--lambda_global_pose', type=float, default=2.5)
     parser.add_argument('--lambda_position', type=float, default=1)
     parser.add_argument('--ee_velo', type=int, default=1)
+    
     parser.add_argument('--ee_from_root', type=int, default=1)
     parser.add_argument('--scheduler', type=str, default='none')
     parser.add_argument('--rec_loss_mode', type=str, default='extra_global_pos')
@@ -51,6 +53,9 @@ def get_parser():
     parser.add_argument('--simple_operator', type=int, default=0)
     parser.add_argument('--use_sep_ee', type=int, default=0)
     parser.add_argument('--eval_seq', type=int, default=0)
+
+    parser.add_argument('--use_original', type=int, default=0) # set to 1 to use original dataset
+    parser.add_argument('--eval_epoch', type=int, default=30000)
     return parser
 
 
@@ -60,9 +65,10 @@ def get_args():
 
 
 def get_std_bvh(args=None, dataset=None):
-    if args is None and dataset is None: raise Exception('Unexpected parameter')
-    if dataset is None: dataset = args.dataset
-    std_bvh = './datasets/Mixamo/std_bvhs/{}.bvh'.format(dataset)
+    if args is None or dataset is None: raise Exception('Unexpected parameter')
+    # This part is wrong... bad naming
+    # if dataset is None: dataset = args.dataset
+    std_bvh = f'./datasets/{args.dataset}/std_bvhs/{dataset}.bvh'
     return std_bvh
 
 

@@ -8,19 +8,30 @@ from datasets.bvh_parser import BVH_file
 import Animation
 
 
-def full_batch(suffix, prefix):
+# def full_batch(args, suffix, prefix):
+#     res = []
+#     chars = ['Mousey_m', 'Goblin_m', 'Mremireh_m', 'Vampire_m']
+#     for char in chars:
+#         res.append(batch(args, char, suffix, prefix))
+#     return res
+def full_batch(args, suffix, prefix):
     res = []
-    chars = ['Mousey_m', 'Goblin_m', 'Mremireh_m', 'Vampire_m']
+    if not args.use_original:
+        # chars = ['aj', 'Ch14_nonPBR', 'kaya', 'mutant']
+        chars = open(f'./datasets/{args.dataset}/vis_vox.txt').read().splitlines()
+    else:
+        chars = ['Mousey_m', 'Goblin_m', 'Mremireh_m', 'Vampire_m']
+
     for char in chars:
-        res.append(batch(char, suffix, prefix))
+        res.append(batch(args, char, suffix, prefix))
     return res
 
-
-def batch(char, suffix, prefix):
+def batch(args, char, suffix, prefix):
+    # __import__('pdb').set_trace()
     input_path = os.path.join(prefix, 'results/bvh')
 
     all_err = []
-    ref_file = get_std_bvh(dataset=char)
+    ref_file = get_std_bvh(args, dataset=char)
     ref_file = BVH_file(ref_file)
     height = ref_file.get_height()
 
@@ -50,6 +61,7 @@ def batch(char, suffix, prefix):
         pos = pos[:, index, :]
         pos_ref = pos_ref[:, index, :]
 
+        
         err = (pos - pos_ref) * (pos - pos_ref)
         err /= height ** 2
         err = np.mean(err)

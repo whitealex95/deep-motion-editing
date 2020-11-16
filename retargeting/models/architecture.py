@@ -14,9 +14,9 @@ class GAN_model(BaseModel):
         self.character_names = character_names
         self.dataset = dataset
         self.n_topology = len(character_names)
-        self.models = []
-        self.D_para = []
-        self.G_para = []
+        self.models = []  # models for each topology
+        self.D_para = []  # models for each topology
+        self.G_para = []  # models for each topology
         self.args = args
 
         for i in range(self.n_topology):
@@ -30,10 +30,10 @@ class GAN_model(BaseModel):
             self.optimizerD = optim.Adam(self.D_para, args.learning_rate, betas=(0.9, 0.999))
             self.optimizerG = optim.Adam(self.G_para, args.learning_rate, betas=(0.9, 0.999))
             self.optimizers = [self.optimizerD, self.optimizerG]
-            self.criterion_rec = torch.nn.MSELoss()
-            self.criterion_gan = GAN_loss(args.gan_mode).to(self.device)
-            self.criterion_cycle = torch.nn.L1Loss()
-            self.criterion_ee = Criterion_EE(args, torch.nn.MSELoss())
+            self.criterion_rec = torch.nn.MSELoss()  # reconstruction loss
+            self.criterion_gan = GAN_loss(args.gan_mode).to(self.device)  # GAN loss
+            self.criterion_cycle = torch.nn.L1Loss()  # Cycle Loss
+            self.criterion_ee = Criterion_EE(args, torch.nn.MSELoss())  # End Effector Loss
             for i in range(self.n_topology):
                 self.fake_pools.append(ImagePool(args.pool_size))
         else:
@@ -52,17 +52,19 @@ class GAN_model(BaseModel):
                     from datasets.bvh_writer import BVH_writer
                     from datasets.bvh_parser import BVH_file
                     import option_parser
-                    file = BVH_file(option_parser.get_std_bvh(dataset=char))
+                    file = BVH_file(option_parser.get_std_bvh(args, dataset=char))
                     writer_group.append(BVH_writer(file.edges, file.names))
                 self.writer.append(writer_group)
 
     def set_input(self, motions):
         self.motions_input = motions
 
-        if not self.is_train:
+        if not self.is_train:  # during test
             self.motion_backup = []
+            # __import__('pdb').set_trace()
             for i in range(self.n_topology):
                 self.motion_backup.append(motions[i][0].clone())
+                # motions_input becomes the motion of the first character (both src and target)
                 self.motions_input[i][0][1:] = self.motions_input[i][0][0]
                 self.motions_input[i][1] = [0] * len(self.motions_input[i][1])
 
@@ -89,18 +91,23 @@ class GAN_model(BaseModel):
         self.rnd_idx = []
 
         for i in range(self.n_topology):
-            self.offset_repr.append(self.models[i].static_encoder(self.dataset.offsets[i]))
+            # select i-th offset group
+            # static encoding(encode the offset)
+            self.offset_repr.append(self.models[i].static_encoder(self.dataset.offsets[i]))  
 
         # reconstruct
         for i in range(self.n_topology):
-            motion, offset_idx = self.motions_input[i]
+            # __import__('pdb').set_trace()
+            # motion batch for i-th group (from dataloader)
+            motion, offset_idx = self.motions_input[i]  # motion: real rotation data, offset_index: character index 
             motion = motion.to(self.device)
             self.motions.append(motion)
 
-            motion_denorm = self.dataset.denorm(i, offset_idx, motion)
+            motion_denorm = self.dataset.denorm(i, offset_idx, motion)  # bring it back to original scale(will be normalized when computing loss)
             self.motion_denorm.append(motion_denorm)
             offsets = [self.offset_repr[i][p][offset_idx] for p in range(self.args.num_layers + 1)]
-            latent, res = self.models[i].auto_encoder(motion, offsets)
+            # Error when window_size: 64->16
+            latent, res = self.models[i].auto_encoder(motion, offsets)  # res: reconstruction from autoencoder
             res_denorm = self.dataset.denorm(i, offset_idx, res)
             res_pos = self.models[i].fk.forward_from_raw(res_denorm, self.dataset.offsets[i][offset_idx])
             self.res_pos.append(res_pos)
@@ -113,13 +120,14 @@ class GAN_model(BaseModel):
                         velo=self.args.ee_velo, from_root=self.args.ee_from_root)
             height = self.models[i].height[offset_idx]
             height = height.reshape((height.shape[0], 1, height.shape[1], 1))
-            ee /= height
+            ee /= height  # normalize end effector position (velocity is stored if args.ee_velo==1)
             self.pos_ref.append(pos)
             self.ee_ref.append(ee)
 
         # retargeting
         for src in range(self.n_topology):
             for dst in range(self.n_topology):
+                # Use the latents created in for reconstruction
                 if self.is_train:
                     rnd_idx = torch.randint(len(self.character_names[dst]), (self.latents[src].shape[0],))
                 else:
@@ -141,6 +149,7 @@ class GAN_model(BaseModel):
                 self.fake_pos.append(fake_pos)
                 self.fake_res.append(fake_res)
                 self.fake_ee.append(fake_ee)
+                # __import__('pdb').set_trace()
                 self.fake_res_denorm.append(fake_res_denorm)
 
 
@@ -176,7 +185,7 @@ class GAN_model(BaseModel):
             self.loss_D += self.loss_Ds[-1]
             self.loss_recoder.add_scalar('D_loss_{}'.format(i), self.loss_Ds[-1])
 
-    def backward_G(self):
+    def backward_G(self):  # Generator = Decoder
         #rec_loss and gan loss
         self.rec_losses = []
         self.rec_loss = 0
@@ -185,20 +194,22 @@ class GAN_model(BaseModel):
         self.ee_loss = 0
         self.loss_G_total = 0
         for i in range(self.n_topology):
+            # ToDo
+            # DEBUG: rotational loss on custom dataset is enormously larger than that of original dataset
             rec_loss1 = self.criterion_rec(self.motions[i], self.res[i])
-            self.loss_recoder.add_scalar('rec_loss_quater_{}'.format(i), rec_loss1)
+            self.loss_recoder.add_scalar('rec_loss_quater_{}'.format(i), rec_loss1)  # rotational loss
 
             height = self.models[i].real_height[self.motions_input[i][1]]
             height = height.reshape(height.shape + (1, 1,))
             input_pos = self.motion_denorm[i][:, -3:, :] / height
             rec_pos = self.res_denorm[i][:, -3:, :] / height
             rec_loss2 = self.criterion_rec(input_pos, rec_pos)
-            self.loss_recoder.add_scalar('rec_loss_global_{}'.format(i), rec_loss2)
+            self.loss_recoder.add_scalar('rec_loss_global_{}'.format(i), rec_loss2)  # positional loss (normalized with h)
 
             pos_ref_global = self.models[i].fk.from_local_to_world(self.pos_ref[i]) / height.reshape(height.shape + (1, ))
             res_pos_global = self.models[i].fk.from_local_to_world(self.res_pos[i]) / height.reshape(height.shape + (1, ))
             rec_loss3 = self.criterion_rec(pos_ref_global, res_pos_global)
-            self.loss_recoder.add_scalar('rec_loss_position_{}'.format(i), rec_loss3)
+            self.loss_recoder.add_scalar('rec_loss_position_{}'.format(i), rec_loss3)  # positional loss (normalized with h)
 
             rec_loss = rec_loss1 + (rec_loss2 * self.args.lambda_global_pose +
                                     rec_loss3 * self.args.lambda_position) * 100
@@ -280,11 +291,12 @@ class GAN_model(BaseModel):
         self.epoch_cnt = epoch
 
     def compute_test_result(self):
+        # compute, and write
         gt_poses = []
         gt_denorm = []
         for src in range(self.n_topology):
-            gt = self.motion_backup[src]
-            idx = list(range(gt.shape[0]))
+            gt = self.motion_backup[src]  # motion_backed up from input
+            idx = list(range(gt.shape[0])) 
             gt = self.dataset.denorm(src, idx, gt)
             gt_denorm.append(gt)
             gt_pose = self.models[src].fk.forward_from_raw(gt, self.dataset.offsets[src][idx])
@@ -293,6 +305,8 @@ class GAN_model(BaseModel):
                 new_path = os.path.join(self.bvh_path, self.character_names[src][i])
                 from option_parser import try_mkdir
                 try_mkdir(new_path)
+                # check here
+                # __import__('pdb').set_trace()
                 self.writer[src][i].write_raw(gt[i, ...], 'quaternion', os.path.join(new_path, '{}_gt.bvh'.format(self.id_test)))
 
         p = 0

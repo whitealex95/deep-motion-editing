@@ -2,7 +2,7 @@ import sys
 sys.path.append('./retargeting/')
 from torch.utils.data.dataloader import DataLoader
 from models import create_model
-from datasets import create_dataset, get_character_names
+from datasets import create_dataset, get_character_names, get_character_names_custom
 import option_parser
 import os
 from option_parser import try_mkdir
@@ -11,7 +11,10 @@ import time
 
 def main():
     args = option_parser.get_args()
-    characters = get_character_names(args)
+    if not args.use_original:
+        characters = get_character_names_custom(args)
+    else:
+        characters = get_character_names(args)
 
     log_path = os.path.join(args.save_dir, 'logs/')
     try_mkdir(args.save_dir)
@@ -21,7 +24,8 @@ def main():
         para_file.write(' '.join(sys.argv))
 
     dataset = create_dataset(args, characters)
-    data_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=2)
+    # data_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
+    data_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=2)  # Shuffle does on single bvh single window
 
     model = create_model(args, characters, dataset)
 
@@ -34,8 +38,8 @@ def main():
 
     for epoch in range(args.epoch_begin, args.epoch_num):
         for step, motions in enumerate(data_loader):
-            model.set_input(motions)
-            model.optimize_parameters()
+            model.set_input(motions)  # set motion input
+            model.optimize_parameters()  # do the fancy job (forward, loss calc, summary write, backward)
 
             if args.verbose:
                 res = model.verbose()

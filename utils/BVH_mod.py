@@ -142,29 +142,33 @@ def load(filename, start=None, end=None, order=None, world=False, need_quater=Fa
         
         # dmatch = line.strip().split(' ')
         dmatch = line.strip().split()
-        if dmatch:
-            data_block = np.array(list(map(float, dmatch)))
-            N = len(parents)
-            fi = i - start if start else i
-            if   channels == 3:
-                positions[fi,0:1] = data_block[0:3]
-                rotations[fi, : ] = data_block[3: ].reshape(N,3)
-            elif channels == 6:
-                data_block = data_block.reshape(N,6)
-                positions[fi,:] = data_block[:,0:3]
-                rotations[fi,:] = data_block[:,3:6]
-            elif channels == 9:
-                positions[fi,0] = data_block[0:3]
-                data_block = data_block[3:].reshape(N-1,9)
-                rotations[fi,1:] = data_block[:,3:6]
-                positions[fi,1:] += data_block[:,0:3] * data_block[:,6:9]
-            else:
-                raise Exception("Too many channels! %i" % channels)
-
-            i += 1
+        try:
+            if dmatch:
+                data_block = np.array(list(map(float, dmatch)))
+                N = len(parents)
+                fi = i - start if start else i
+                if   channels == 3:
+                    positions[fi,0:1] = data_block[0:3]
+                    rotations[fi, : ] = data_block[3: ].reshape(N,3)
+                elif channels == 6:
+                    data_block = data_block.reshape(N,6)
+                    positions[fi,:] = data_block[:,0:3]
+                    rotations[fi,:] = data_block[:,3:6]
+                elif channels == 9:
+                    positions[fi,0] = data_block[0:3]
+                    data_block = data_block[3:].reshape(N-1,9)
+                    rotations[fi,1:] = data_block[:,3:6]
+                    positions[fi,1:] += data_block[:,0:3] * data_block[:,6:9]
+                else:
+                    raise Exception("Too many channels! %i" % channels)
+                i += 1
+        except:
+            __import__('pdb').set_trace()
+            # print('hi')
 
     f.close()
 
+    # __import__('pdb').set_trace()
     if need_quater:
         rotations = Quaternions.from_euler(np.radians(rotations), order=order, world=world)
     elif order != 'xyz':

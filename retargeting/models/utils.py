@@ -45,10 +45,14 @@ class Criterion_EE:
         reg_ee_loss = self.base_criterion(pred, gt)
         if self.args.ee_velo:
             gt_norm = torch.norm(gt, dim=-1)
-            contact_idx = gt_norm < self.norm_eps
+            contact_idx = gt_norm < self.norm_eps  # for those with small velocity, add 
             extra_ee_loss = self.base_criterion(pred[contact_idx], gt[contact_idx])
         else:
             extra_ee_loss = 0
+        
+        if extra_ee_loss is 0 or torch.isnan(extra_ee_loss):  # all joints are moving!
+            extra_ee_loss = 0
+            # __import__('pdb').set_trace()
         return reg_ee_loss + extra_ee_loss * 100
 
     def parameters(self):
@@ -167,8 +171,8 @@ def get_ee(pos, pa, ees, velo=False, from_root=False):
         if not from_root and fa == 0: continue
         pos[:, :, i, :] += pos[:, :, fa, :]
 
-    pos = pos[:, :, ees, :]
+    pos = pos[:, :, ees, :]  # get ee position
     if velo:
-        pos = pos[:, 1:, ...] - pos[:, :-1, ...]
+        pos = pos[:, 1:, ...] - pos[:, :-1, ...]  # use ee velocity instead of position
         pos = pos * 10
     return pos

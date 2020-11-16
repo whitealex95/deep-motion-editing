@@ -59,10 +59,12 @@ class Encoder(nn.Module):
         # padding the one zero row to global position, so each joint including global position has 4 channels as input
         if self.args.rotation == 'quaternion' and self.args.pos_repr != '4d':
             input = torch.cat((input, torch.zeros_like(input[:, [0], :])), dim=1)
+            # [105, 99, 64]-> [105, 100, 64]
 
         for i, layer in enumerate(self.layers):
             if self.args.skeleton_info == 'concat' and offset is not None:
-                self.convs[i].set_offset(offset[i])
+                self.convs[i].set_offset(offset[i])  # sequential skeleton convs
+
             input = layer(input)
         return input
 
@@ -132,7 +134,7 @@ class AE(nn.Module):
     def forward(self, input, offset=None):
         latent = self.enc(input, offset)
         result = self.dec(latent, offset)
-        return latent, result
+        return latent, result  # latent & reconstructed value
 
 
 # eoncoder for static part, i.e. offset part
@@ -145,7 +147,7 @@ class StaticEncoder(nn.Module):
         channels = 3
 
         for i in range(args.num_layers):
-            neighbor_list = find_neighbor(edges, args.skeleton_dist)
+            neighbor_list = find_neighbor(edges, args.skeleton_dist)  # default skeleton distance = 2
             seq = []
             seq.append(SkeletonLinear(neighbor_list, in_channels=channels * len(neighbor_list),
                                       out_channels=channels * 2 * len(neighbor_list), extra_dim1=True))
@@ -163,4 +165,4 @@ class StaticEncoder(nn.Module):
         for i, layer in enumerate(self.layers):
             input = layer(input)
             output.append(input.squeeze())
-        return output
+        return output  # static latent for each layer

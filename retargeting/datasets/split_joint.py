@@ -7,6 +7,7 @@ as suffix to store the split files in the new dir.
 
 import sys
 import os
+sys.path.insert(0, os.path.abspath('.'))
 from option_parser import try_mkdir
 import numpy as np
 from tqdm import tqdm
@@ -19,6 +20,7 @@ import BVH_mod as BVH
 def split_joint(file_name, save_file=None):
     if save_file is None:
         save_file = file_name
+    # Used for splitting 3 joints as described in paper
     target_joints = ['Spine1', 'LeftShoulder', 'RightShoulder']
     target_idx = [-1] * len(target_joints)
     anim, names, ftime = BVH.load(file_name)
@@ -102,6 +104,5 @@ def batch_split(source, dest):
 if __name__ == '__main__':
     prefix = './datasets/Mixamo/'
     names = [f for f in os.listdir(prefix) if os.path.isdir(os.path.join(prefix, f))]
-
     for name in names:
         batch_split(os.path.join(prefix, name), os.path.join(prefix, name + '_m'))

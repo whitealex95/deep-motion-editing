@@ -46,7 +46,7 @@ class MixedData(Dataset):
         self.means = []
         self.vars = []
         dataset_num = 0
-        seed = 19260817
+        # seed = 19260817
         total_length = 10000000
         all_datas = []
         for datasets in datasets_groups:
@@ -55,15 +55,15 @@ class MixedData(Dataset):
             vars_group = []
             dataset_num += len(datasets)
             tmp = []
-            for i, dataset in enumerate(datasets):
+            for i, character in enumerate(datasets):
                 new_args = copy.copy(args)
                 new_args.data_augment = 0
-                new_args.dataset = dataset
+                new_args.character = character
 
-                tmp.append(MotionData(new_args))
-
-                mean = np.load('./datasets/Mixamo/mean_var/{}_mean.npy'.format(dataset))
-                var = np.load('./datasets/Mixamo/mean_var/{}_var.npy'.format(dataset))
+                tmp.append(MotionData(new_args))  # Magic happens
+                # Load mean and variance to unnormalize 
+                mean = np.load('./datasets/{}/mean_var/{}_mean.npy'.format(args.dataset, character))
+                var = np.load('./datasets/{}/mean_var/{}_var.npy'.format(args.dataset, character))
                 mean = torch.tensor(mean)
                 mean = mean.reshape((1,) + mean.shape)
                 var = torch.tensor(var)
@@ -72,7 +72,7 @@ class MixedData(Dataset):
                 means_group.append(mean)
                 vars_group.append(var)
 
-                file = BVH_file(get_std_bvh(dataset=dataset))
+                file = BVH_file(get_std_bvh(args, dataset=character))
                 if i == 0:
                     self.joint_topologies.append(file.topology)
                     self.ee_ids.append(file.get_ee_id())
@@ -109,6 +109,7 @@ class MixedData(Dataset):
     def denorm(self, gid, pid, data):
         means = self.means[gid][pid, ...]
         var = self.vars[gid][pid, ...]
+        __import__('pdb').set_trace()
         return data * var + means
 
     def __len__(self):
@@ -117,14 +118,14 @@ class MixedData(Dataset):
     def __getitem__(self, item):
         res = []
         for data in self.final_data:
-            res.append(data[item])
+            res.append(data[item])  # [[99,64], int], [[99, 64], int]]  # 64: window_size, 99 = 33*3 (rotations? maybe)
         return res
 
 
 class TestData(Dataset):
     def __init__(self, args, characters):
         self.characters = characters
-        self.file_list = get_test_set()
+        self.file_list = get_test_set(args)
         self.mean = []
         self.joint_topologies = []
         self.var = []
@@ -132,13 +133,22 @@ class TestData(Dataset):
         self.ee_ids = []
         self.args = args
         self.device = torch.device(args.cuda_device)
-
+        
+        # For custom data, characters = [['aj', 'aj', 'aj', 'aj'], ['aj', 'Ch14_nonPBR', 'kaya', 'mutant']]
         for i, character_group in enumerate(characters):
             mean_group = []
             var_group = []
             offsets_group = []
             for j, character in enumerate(character_group):
-                file = BVH_file(get_std_bvh(dataset=character))
+                # For custom data,  A group = ['aj', 'aj', 'aj', 'aj'] (same) 
+                #                   B group = ['aj', 'Ch14_nonPBR', 'kaya', 'mutant']
+
+                # Read standard bvh file of the character (any bvh file of the character)
+                # For extracting offset & topology info
+                # It does not need rotational information(maybe)
+                file = BVH_file(get_std_bvh(args, dataset=character))
+                
+                # Read topology info
                 if j == 0:
                     self.joint_topologies.append(file.topology)
                     self.ee_ids.append(file.get_ee_id())
@@ -146,8 +156,8 @@ class TestData(Dataset):
                 new_offset = torch.tensor(new_offset, dtype=torch.float)
                 new_offset = new_offset.reshape((1,) + new_offset.shape)
                 offsets_group.append(new_offset)
-                mean = np.load('./datasets/Mixamo/mean_var/{}_mean.npy'.format(character))
-                var = np.load('./datasets/Mixamo/mean_var/{}_var.npy'.format(character))
+                mean = np.load('./datasets/{}/mean_var/{}_mean.npy'.format(args.dataset, character))
+                var = np.load('./datasets/{}/mean_var/{}_var.npy'.format(args.dataset, character))
                 mean = torch.tensor(mean)
                 mean = mean.reshape((1, ) + mean.shape)
                 var = torch.tensor(var)
@@ -155,14 +165,15 @@ class TestData(Dataset):
                 mean_group.append(mean)
                 var_group.append(var)
 
+            # [4, 99, 1] <- [n_character, 24(n_bone = n_joint-1 excluding end effector)*4(quat)+3(root joint offset), 1]
             mean_group = torch.cat(mean_group, dim=0).to(self.device)
-            var_group = torch.cat(var_group, dim=0).to(self.device)
-            offsets_group = torch.cat(offsets_group, dim=0).to(self.device)
+            var_group = torch.cat(var_group, dim=0).to(self.device)  # [4, 99, 1] <- [n_character, 24*4+3, 1]
+            offsets_group = torch.cat(offsets_group, dim=0).to(self.device)  # [4, 99, 1] <- [n_character, 25(joint), 1]
             self.mean.append(mean_group)
             self.var.append(var_group)
             self.offsets.append(offsets_group)
 
-    def __getitem__(self, item):
+    def __getitem__(self, item):  # item: index of motion(bvh). We don't care about batching in test set. batch_size = number of characters
         res = []
         bad_flag = 0
         for i, character_group in enumerate(self.characters):
@@ -172,7 +183,7 @@ class TestData(Dataset):
                 new_motion = self.get_item(i, j, item)
                 if new_motion is not None:
                     new_motion = new_motion.reshape((1, ) + new_motion.shape)
-                    new_motion = (new_motion - self.mean[i][j]) / self.var[i][j]
+                    new_motion = (new_motion - self.mean[i][j]) / self.var[i][j]  # normalize motion read from bvh
                     ref_shape = new_motion
                 res_group.append(new_motion)
 
@@ -188,28 +199,38 @@ class TestData(Dataset):
 
             res_group = torch.cat(res_group, dim=0)
             res.append([res_group, list(range(len(character_group)))])
-        return res
+        return res  # [4, 99, 92] <- n_character, 24*4+3, n_frame//4 *4
 
     def __len__(self):
         return len(self.file_list)
 
-    def get_item(self, gid, pid, id):
+    def get_item(self, gid, pid, id):  # gid: group id(A or B), pid: order in that group, id: bvh motion id
+        # Load motion from bvh
+        # TODO: make it work even if dst bvh does not have motion. Actually, it should still work...
         character = self.characters[gid][pid]
-        path = './datasets/Mixamo/{}/'.format(character)
+        path = './datasets/{}/{}/'.format(self.args.dataset, character)
         if isinstance(id, int):
-            file = path + self.file_list[id]
+            file = path + self.file_list[id]  # list from test_list.txt(name of bvh)
         elif isinstance(id, str):
             file = id
         else:
             raise Exception('Wrong input file type')
         if not os.path.exists(file):
+            __import__('pdb').set_trace()
             raise Exception('Cannot find file')
         file = BVH_file(file)
         motion = file.to_tensor(quater=self.args.rotation == 'quaternion')
-        motion = motion[:, ::2]
-        length = motion.shape[-1]
-        length = length // 4 * 4
-        return motion[..., :length].to(self.device)
+        # What the fuck, they shorten the motion!
+        if self.args.use_original:
+            motion = motion[:, ::2]
+            length = motion.shape[-1]
+            length = length // 4 * 4
+            return motion[..., :length].to(self.device)
+        else:
+            length = motion.shape[-1]
+            length = length // 4 * 4  # Must Needed!!! (May be due to the pooling operation in network?)
+            return motion[..., :length].to(self.device)
+
 
     def denorm(self, gid, pid, data):
         means = self.mean[gid][pid, ...]

@@ -18,6 +18,9 @@ if __name__ == '__main__':
     bpy.ops.object.select_all(action='DESELECT')
 
     add_rendering_parameters(bpy.context.scene, args, scene[1])
+    print("Finished adding parameters")
 
     if args.render:
+        print("Start Render")
         bpy.ops.render.render(animation=True, use_viewport=True)
+        print("Done Render")

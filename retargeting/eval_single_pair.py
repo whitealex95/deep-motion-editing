@@ -11,6 +11,7 @@ def eval_prepare(args):
     character_names = []
     character_names.append(args.input_bvh.split('/')[-2])
     character_names.append(args.target_bvh.split('/')[-2])
+    # __import__('pdb').set_trace()
     if args.test_type == 'intra':
         if character_names[0].endswith('_m'):
             character = [['BigVegas', 'BigVegas'], character_names]
@@ -75,7 +76,8 @@ def main():
     dataset = create_dataset(args, character_names)
 
     model = create_model(args, character_names, dataset)
-    model.load(epoch=20000)
+    # model.load(epoch=20000)
+    model.load(epoch=600)
 
     input_motion = []
     for i, character_group in enumerate(character_names):
@@ -90,6 +92,7 @@ def main():
 
     model.set_input(input_motion)
     model.test()
+    __import__('pdb').set_trace()
 
     os.system('cp "{}/{}/0_{}.bvh" "./{}"'.format(model.bvh_path, output_character_name, src_id, output_filename))
 
